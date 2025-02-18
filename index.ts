@@ -36,23 +36,6 @@ const logMessage = (message: string) => {
   fs.appendFileSync(logFilePath, formattedMessage + '\n');
 };
 
-async function translateText(text: string, sourceLang: string, targetLang: string, attempts: number): Promise<string> {
-  const browser = await puppeteer.launch();
-  const page = await browser.newPage();
-  const url = `https://www.deepl.com/translator#${sourceLang}/${targetLang}/${encodeURIComponent(text)}`;
-  await page.goto(url, { waitUntil: 'networkidle2' });
-  await page.waitForSelector('[aria-labelledby="translation-target-heading"]', { timeout: selectorTimeout * attempts });
-  await page.waitForTimeout(pageLoadTimeout * attempts);
-  const pageContent = await page.content();
-  const $ = cheerio.load(pageContent);
-  const translatedText = $('[aria-labelledby="translation-target-heading"] p')
-    .map((_, p) => $(p).text())
-    .get()
-    .join('\n');
-  await browser.close();
-  return translatedText;
-};
-
 function initOutputCSV(sourceLang: Lang, targetLangs: Lang[]): void {
   const headers = [
     { id: 'IdExtern', title: 'IdExtern' },
@@ -74,6 +57,22 @@ function initOutputCSV(sourceLang: Lang, targetLangs: Lang[]): void {
   });
 }
 
+async function translateText(text: string, sourceLang: string, targetLang: string, attempts: number): Promise<string> {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  const url = `https://www.deepl.com/translator#${sourceLang}/${targetLang}/${encodeURIComponent(text)}`;
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  await page.waitForSelector('[aria-labelledby="translation-target-heading"]', { timeout: selectorTimeout * attempts });
+  await page.waitForTimeout(pageLoadTimeout * attempts);
+  const pageContent = await page.content();
+  const $ = cheerio.load(pageContent);
+  const translatedText = $('[aria-labelledby="translation-target-heading"] p')
+    .map((_, p) => $(p).text())
+    .get()
+    .join('\n');
+  await browser.close();
+  return translatedText;
+};
 
 async function translateCSV(sourceLang: Lang, targetLangs: Lang[]): Promise<void> {
   const rows: Row[] = [];
