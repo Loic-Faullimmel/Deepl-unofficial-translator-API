@@ -1,19 +1,19 @@
 import * as cheerio from 'cheerio';
 import csv from 'csv-parser';
+import { CsvWriter } from 'csv-writer/src/lib/csv-writer';
 import * as fs from 'fs';
 import puppeteer from 'puppeteer';
 
-const inputFilePath = 'Export-Translation-ES-False.csv';
-const outputFilePath = `output.csv`; // _${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
-const logFilePath = 'log.txt';
-const debug = false; // Affiche dans la console les logs et le tableur final, et non pas dans les fichiers.
+// Options pour pouvoir relancer le programme à un endroit précis, suite à un plantage en cours de route par ex.
 const startIterations = 0; // À partir de quelle itération commence la lecture des traductions source à traiter.
-const maxIterations = 999; // Nombre maximum d'itérations de traductions source à traiter.
+const maxIterations = 2; // Nombre maximum d'itérations de traductions source à traiter.
 
 // Variables globales pour les timeouts (millisecondes)
 const pageLoadTimeout = 10000; // Temps d'attente pour le chargement de la page Deepl
 const selectorTimeout = 3000; // Timeout pour la sélection du champs de traduction Deepl
 const requestRangeDelay: [min: number, max: number] = [1000, 6000]; // Délai après les requêtes foireuses
+
+let csvWriter: CsvWriter<Row>; // Instantiated in initOutputCSV() 
 
 interface Row {
   IdExtern: string;
@@ -29,7 +29,14 @@ interface Lang {
   deeplParamName: string;
 }
 
-const translateText = async (text: string, sourceLang: string, targetLang: string, attempts: number): Promise<string> => {
+const getRandomDelay = (range: [min: number, max: number]) => Math.floor(Math.random() * (range[1] - range[0] + 1)) + range[0];
+
+const logMessage = (message: string) => {
+  const formattedMessage = `[${new Date().toISOString()}] ${message}`;
+  fs.appendFileSync(logFilePath, formattedMessage + '\n');
+};
+
+async function translateText(text: string, sourceLang: string, targetLang: string, attempts: number): Promise<string> {
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
   const url = `https://www.deepl.com/translator#${sourceLang}/${targetLang}/${encodeURIComponent(text)}`;
@@ -46,20 +53,33 @@ const translateText = async (text: string, sourceLang: string, targetLang: strin
   return translatedText;
 };
 
-const logMessage = (message: string) => {
-  const formattedMessage = `[${new Date().toISOString()}] ${message}`;
-  if (debug) {
-    console.log(formattedMessage);
-  } else {
-    fs.appendFileSync(logFilePath, formattedMessage + '\n');
-  }
-};
+function initOutputCSV(sourceLang: Lang, targetLangs: Lang[]): void {
+  const headers = [
+    { id: 'IdExtern', title: 'IdExtern' },
+    { id: sourceLang.excelColumnName.toUpperCase(), title: sourceLang.excelColumnName.toUpperCase() },
+    { id: `${sourceLang.excelColumnName.toUpperCase()} Translate`, title: `${sourceLang.excelColumnName.toUpperCase()} Translate` },
+    ...targetLangs.flatMap(lang => [
+      { id: lang.excelColumnName.toUpperCase(), title: lang.excelColumnName.toUpperCase() },
+      { id: `${lang.excelColumnName.toUpperCase()} Translate`, title: `${lang.excelColumnName.toUpperCase()} Translate` }
+    ]),
+    { id: 'Comments', title: 'Comments' },
+    { id: 'Category', title: 'Category' },
+    { id: 'KeyFct', title: 'KeyFct' },
+    { id: 'Web', title: 'Web' }
+  ];
 
-const getRandomDelay = (range: [min: number, max: number]) => Math.floor(Math.random() * (range[1] - range[0] + 1)) + range[0];
+  csvWriter = require('csv-writer').createObjectCsvWriter({
+    path: outputFilePath,
+    header: headers
+  });
+}
 
-const translateCSV = async (sourceLang: Lang, targetLangs: Lang[]) => {
+
+async function translateCSV(sourceLang: Lang, targetLangs: Lang[]): Promise<void> {
   const rows: Row[] = [];
   const detectedLangs: Lang[] = [];
+
+  initOutputCSV(sourceLang, targetLangs);
 
   fs.createReadStream(inputFilePath)
     .pipe(csv())
@@ -76,25 +96,32 @@ const translateCSV = async (sourceLang: Lang, targetLangs: Lang[]) => {
     })
     .on('data', (data: Row) => rows.push(data))
     .on('end', async () => {
-      let iterationCount = 0;
       logMessage('--- Début de l\'éxecution ---');
+      
+      let iterationCount = 0;
+      
       rowsLoop: for (let i = startIterations; i < rows.length; i++) {
-        const row = rows[i];
         if (iterationCount >= maxIterations) {
           break;
         }
+        const row = rows[i];
         const sourceText = row[sourceLang.excelColumnName.toUpperCase()];
+
         if (sourceText) {
           logMessage(`Source: ${sourceText} (${sourceLang.excelColumnName} - ${sourceLang.deeplParamName})`);
+
           for (const targetLang of targetLangs) {
             const langKey = targetLang.excelColumnName.toUpperCase();
             const translateKey = `${langKey} Translate`;
+
             if (row[translateKey] !== 'False') {
               logMessage(` Traduction déjà effectuée ou non spécifiée pour ${targetLang.excelColumnName} (${targetLang.deeplParamName})`);
               continue;
             }
+
             let translatedText = '';
             let attempts = 0;
+
             while (attempts < 3 && !translatedText) {
               try {
                 attempts++;
@@ -112,49 +139,33 @@ const translateCSV = async (sourceLang: Lang, targetLangs: Lang[]) => {
               await getRandomDelay(requestRangeDelay); // Ajout d'un délai entre les requêtes
             }
             if (!translatedText) {
-              row[langKey] = '';
-              row[translateKey] = 'False';
               logMessage(` Échec de traduction vers ${targetLang.excelColumnName} (${targetLang.deeplParamName}) après 3 tentatives`);
               logMessage(` ERROR Deepl: too many requests`); // Erreur supposée: trop de requêtes envoyées à Deepl
               logMessage(` Abandon de l'exécution des traductions, itérations réussies: ${startIterations}-${iterationCount} / ${rows.length}`);
+
               break rowsLoop;
             }
           }
+          await csvWriter.writeRecords([row]);
           iterationCount++;
         }
       }
-      const headers = [
-        { id: 'IdExtern', title: 'IdExtern' },
-        { id: sourceLang.excelColumnName.toUpperCase(), title: sourceLang.excelColumnName.toUpperCase() },
-        { id: `${sourceLang.excelColumnName.toUpperCase()} Translate`, title: `${sourceLang.excelColumnName.toUpperCase()} Translate` },
-        ...targetLangs.flatMap(lang => [
-          { id: lang.excelColumnName.toUpperCase(), title: lang.excelColumnName.toUpperCase() },
-          { id: `${lang.excelColumnName.toUpperCase()} Translate`, title: `${lang.excelColumnName.toUpperCase()} Translate` }
-        ]),
-        { id: 'Comments', title: 'Comments' },
-        { id: 'Category', title: 'Category' },
-        { id: 'KeyFct', title: 'KeyFct' },
-        { id: 'Web', title: 'Web' }
-      ];
-      if (debug) {
-        console.log('Contenu du fichier traduit :');
-        console.log(headers.map(header => header.title).join(','));
-        rows.forEach(row => {
-          console.log(headers.map(header => row[header.id]).join(','));
-        });
-      } else {
-        const csvWriter = require('csv-writer').createObjectCsvWriter({
-          path: outputFilePath,
-          header: headers
-        });
-        await csvWriter.writeRecords(rows);
-        logMessage(`Fichier traduit avec succès : ${outputFilePath}`);
-      }
+      logMessage(`Fichier traduit avec succès : ${outputFilePath}`);
       logMessage('--- Fin de l\'éxecution ---');
+      process.exit(0);
     });
 };
 
-// Appel de la fonction avec les langues source et cibles
+process.on('SIGINT', () => {
+  logMessage('--- Process terminé par l\'utilisateur. ---');
+  process.exit(0);
+});
+
+
+// MAIN setup & call
+const inputFilePath = 'Export-Translation-ES-False.csv';
+const outputFilePath = `output.csv`; // _${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+const logFilePath = 'log.txt';
 const sourceLang: Lang = { excelColumnName: 'US', deeplParamName: 'en' };
 const targetLangs: Lang[] = [
   { excelColumnName: 'ES', deeplParamName: 'es' },
@@ -162,3 +173,4 @@ const targetLangs: Lang[] = [
   { excelColumnName: 'DE', deeplParamName: 'de' },
 ];
 translateCSV(sourceLang, targetLangs);
+
