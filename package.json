@@ -1,0 +1,22 @@
+{
+    "name": "deepl-translation-script",
+    "version": "1.0.0",
+    "description": "Script TypeScript pour traduire des textes via le site web utilisateur de Deepl (contournement de l'API officiel).",
+    "main": "index.ts",
+    "scripts": {
+        "start": "ts-node index.ts"
+    },
+    "dependencies": {
+        "axios": "^0.21.1",
+        "cheerio": "^1.0.0",
+        "csv-parser": "^3.0.0",
+        "csv-writer": "^1.6.0",
+        "puppeteer": "^10.4.0"
+    },
+    "devDependencies": {
+        "ts-node": "^10.0.0",
+        "typescript": "^4.3.5"
+    },
+    "author": "",
+    "license": "ISC"
+}
