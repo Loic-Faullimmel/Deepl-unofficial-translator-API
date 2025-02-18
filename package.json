@@ -1,7 +1,7 @@
 {
     "name": "deepl-translation-script",
     "version": "1.0.0",
-    "description": "TypeScript script for data scraping translations from the Deepl website.",
+    "description": "TypeScript script for scraping translations data from the Deepl website.",
     "main": "index.ts",
     "scripts": {
         "start": "ts-node index.ts"
