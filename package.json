@@ -1,7 +1,7 @@
 {
     "name": "deepl-translation-script",
     "version": "1.0.0",
-    "description": "Script TypeScript pour traduire des textes via le site web utilisateur de Deepl (contournement de l'API officiel).",
+    "description": "TypeScript script for data scraping translations from the Deepl website.",
     "main": "index.ts",
     "scripts": {
         "start": "ts-node index.ts"
