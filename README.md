@@ -1,7 +1,7 @@
 # Deepl translator scraper
 
 ## Description
-This project is a TypeScript script designed to scrape translation data from the Deepl website. It reads a CSV file containing text in various languages and translates the text into specified target languages using Deepl.
+This project is a TypeScript script designed to scrape translation result content from the Deepl website. It reads a specific CSV file containing text in various languages and translates the text into specified target languages using Deepl.
 
 ## Project Structure
 - `package.json`: Contains the project dependencies and scripts.
